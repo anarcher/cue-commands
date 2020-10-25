@@ -22,7 +22,6 @@ import (
 	"cuelang.org/go/cue"
 	"cuelang.org/go/cue/errors"
 
-	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 
 	itask "github.com/anarcher/cue-commands/pkg/task"
@@ -35,65 +34,10 @@ const (
 	commandSection = "command"
 )
 
-func lookupString(obj cue.Value, key, def string) string {
-	str, err := obj.Lookup(key).String()
-	if err == nil {
-		def = str
-	}
-	return strings.TrimSpace(def)
-}
-
-// splitLine splits the first line and the rest of the string.
-func splitLine(s string) (line, tail string) {
-	line = s
-	if p := strings.IndexByte(s, '\n'); p >= 0 {
-		line, tail = strings.TrimSpace(s[:p]), strings.TrimSpace(s[p+1:])
-	}
-	return
-}
-
-func addCustom(c *Command, parent *cobra.Command, typ, name string, tools *cue.Instance) (*cobra.Command, error) {
-	if tools == nil {
-		return nil, errors.New("no commands defined")
-	}
-
-	// TODO: validate allowing incomplete.
-	o := tools.Lookup(typ, name)
-	if !o.Exists() {
-		return nil, o.Err()
-	}
-	docs := o.Doc()
-	var usage, short, long string
-	if len(docs) > 0 {
-		txt := docs[0].Text()
-		short, txt = splitLine(txt)
-		short = lookupString(o, "short", short)
-		if strings.HasPrefix(txt, "Usage:") {
-			usage, txt = splitLine(txt[len("Usage:"):])
-		}
-		usage = lookupString(o, "usage", usage)
-		usage = lookupString(o, "$usage", usage)
-		long = lookupString(o, "long", txt)
-	}
-	if !strings.HasPrefix(usage, name+" ") {
-		usage = name
-	}
-	sub := &cobra.Command{
-		Use:   usage,
-		Short: lookupString(o, "$short", short),
-		Long:  lookupString(o, "$long", long),
-		RunE: mkRunE(c, func(cmd *Command, args []string) error {
-			// TODO:
-			// - parse flags and env vars
-			// - constrain current config with config section
-
-			return doTasks(cmd, typ, name, tools)
-		}),
-	}
-	parent.AddCommand(sub)
-
-	// TODO: implement var/flag handling.
-	return sub, nil
+func DoTasks(cmd Command, typ, command string, root *cue.Instance) error {
+	err := executeTasks(cmd, typ, command, root)
+	exitIfErr(cmd, root, err, true)
+	return err
 }
 
 type customRunner struct {
@@ -114,12 +58,6 @@ func (r *customRunner) keyForTask(t *task) taskKey {
 
 func keyForReference(ref ...string) (k taskKey) {
 	return taskKey(strings.Join(ref, "\000") + "\000")
-}
-
-func doTasks(cmd *Command, typ, command string, root *cue.Instance) error {
-	err := executeTasks(cmd, typ, command, root)
-	exitIfErr(cmd, root, err, true)
-	return err
 }
 
 func (r *customRunner) insert(stack []string, v cue.Value) *task {
@@ -231,7 +169,7 @@ func (r *customRunner) getTasks(v cue.Value, stack []string) {
 //
 // All tasks are started at once, but will block until tasks that they depend
 // on will continue.
-func executeTasks(cmd *Command, typ, command string, inst *cue.Instance) (err error) {
+func executeTasks(cmd Command, typ, command string, inst *cue.Instance) (err error) {
 	cr := &customRunner{
 		name:  command,
 		root:  inst,
@@ -415,13 +353,6 @@ type task struct {
 	dep   map[*task]bool
 }
 
-var legacyKinds = map[string]string{
-	"exec":       "tool/exec.Run",
-	"http":       "tool/http.Do",
-	"print":      "tool/cli.Print",
-	"testserver": "cmd/cue/cmd.Test",
-}
-
 func newTask(path []string, v cue.Value) (*task, errors.Error) {
 	kind, err := v.Lookup("$id").String()
 	if err != nil {
@@ -433,15 +364,12 @@ func newTask(path []string, v cue.Value) (*task, errors.Error) {
 			return nil, errors.Promote(err1, "newTask")
 		}
 	}
-	if k, ok := legacyKinds[kind]; ok {
-		kind = k
-	}
 	rf := itask.Lookup(kind)
 	if rf == nil {
 		return nil, errors.Newf(v.Pos(), "runner of kind %q not found", kind)
 	}
 
-	//TODO:
+	//TODO(anarcher):
 	// Verify entry against template.
 	/*
 		v = internal.UnifyBuiltin(v, kind).(cue.Value)
@@ -461,35 +389,3 @@ func newTask(path []string, v cue.Value) (*task, errors.Error) {
 		dep:    make(map[*task]bool),
 	}, nil
 }
-
-/*
-func init() {
-	itask.Register("cmd/cue/cmd.Test", newTestServerCmd)
-}
-
-var testOnce sync.Once
-
-func newTestServerCmd(v cue.Value) (itask.Runner, error) {
-	server := ""
-	testOnce.Do(func() {
-		s := httptest.NewServer(http.HandlerFunc(
-			func(w http.ResponseWriter, req *http.Request) {
-				data, _ := ioutil.ReadAll(req.Body)
-				d := map[string]interface{}{
-					"data": string(data),
-					"when": "now",
-				}
-				enc := json.NewEncoder(w)
-				_ = enc.Encode(d)
-			}))
-		server = s.URL
-	})
-	return testServerCmd(server), nil
-}
-
-type testServerCmd string
-
-func (s testServerCmd) Run(ctx *itask.Context) (x interface{}, err error) {
-	return map[string]interface{}{"url": string(s)}, nil
-}
-*/

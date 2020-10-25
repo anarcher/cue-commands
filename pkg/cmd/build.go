@@ -8,16 +8,17 @@ import (
 	"cuelang.org/go/cue/load"
 )
 
-func buildTools(cmd *Command, tags, args []string) (*cue.Instance, error) {
+func BuildTools(dir string, tags, args []string) (*cue.Instance, error) {
 	cfg := &load.Config{
+		Dir:   dir,
 		Tags:  tags,
 		Tools: true,
 	}
-
-	binst := loadFromArgs(cmd, args, cfg)
+	binst := load.Instances(args, cfg)
 	if len(binst) == 0 {
 		return nil, nil
 	}
+
 	included := map[string]bool{}
 
 	ti := binst[0].Context().NewInstance(binst[0].Root, nil)
@@ -35,10 +36,9 @@ func buildTools(cmd *Command, tags, args []string) (*cue.Instance, error) {
 			k++
 		}
 		inst.Files = inst.Files[:k]
-
 	}
 
-	insts, err := buildToolInstances(cmd, binst)
+	insts, err := buildToolInstances(binst)
 	if err != nil {
 		return nil, err
 	}
@@ -52,31 +52,7 @@ func buildTools(cmd *Command, tags, args []string) (*cue.Instance, error) {
 	return inst, inst.Err
 }
 
-func buildInstances(cmd *Command, binst []*build.Instance) []*cue.Instance {
-	// TODO:
-	// If there are no files and User is true, then use those?
-	// Always use all files in user mode?
-	instances := cue.Build(binst)
-	for _, inst := range instances {
-		// TODO: consider merging errors of multiple files, but ensure
-		// duplicates are removed.
-		exitIfErr(cmd, inst, inst.Err, true)
-	}
-
-	if flagIgnore.Bool(cmd) {
-		return instances
-	}
-
-	// TODO check errors after the fact in case of ignore.
-	for _, inst := range instances {
-		// TODO: consider merging errors of multiple files, but ensure
-		// duplicates are removed.
-		exitIfErr(cmd, inst, inst.Value().Validate(), !flagIgnore.Bool(cmd))
-	}
-	return instances
-}
-
-func buildToolInstances(cmd *Command, binst []*build.Instance) ([]*cue.Instance, error) {
+func buildToolInstances(binst []*build.Instance) ([]*cue.Instance, error) {
 	instances := cue.Build(binst)
 	for _, inst := range instances {
 		if inst.Err != nil {
