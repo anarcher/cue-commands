@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"io"
 	"testing"
+
+	"cuelang.org/go/cue"
+	"cuelang.org/go/cue/load"
 )
 
 type MockCommand struct {
@@ -34,9 +37,21 @@ func TestDoTasks(t *testing.T) {
 	tags := []string{}
 	args := []string{}
 
-	tools, err := BuildTools(dir, tags, args)
-	if err != nil {
-		t.Fatal(err)
+	c := &load.Config{
+		Dir:   dir,
+		Tools: true,
+		Tags:  tags,
+	}
+	insts := cue.Build(load.Instances(args, c))
+	for _, i := range insts {
+		if err := i.Value().Validate(); err != nil {
+			t.Error(err)
+		}
+	}
+
+	tools := insts[0]
+	if len(insts) > 1 {
+		tools = cue.Merge(insts...)
 	}
 
 	buf := bytes.Buffer{}
@@ -44,7 +59,7 @@ func TestDoTasks(t *testing.T) {
 	typ := "command"
 	name := "print"
 
-	err = DoTasks(cmd, typ, name, tools)
+	err := DoTasks(cmd, typ, name, tools)
 	if err != nil {
 		t.Fatal(err)
 	}
