@@ -34,8 +34,8 @@ const (
 	commandSection = "command"
 )
 
-func DoTasks(cmd Command, typ, command string, root *cue.Instance) error {
-	err := executeTasks(cmd, typ, command, root)
+func DoTasks(cmd Command, typ, command string, root *cue.Instance, path ...string) error {
+	err := executeTasks(cmd, typ, command, root, path...)
 	exitIfErr(cmd, root, err, true)
 	return err
 }
@@ -169,7 +169,7 @@ func (r *customRunner) getTasks(v cue.Value, stack []string) {
 //
 // All tasks are started at once, but will block until tasks that they depend
 // on will continue.
-func executeTasks(cmd Command, typ, command string, inst *cue.Instance) (err error) {
+func executeTasks(cmd Command, typ, command string, inst *cue.Instance, path ...string) (err error) {
 	cr := &customRunner{
 		name:  command,
 		root:  inst,
@@ -177,7 +177,11 @@ func executeTasks(cmd Command, typ, command string, inst *cue.Instance) (err err
 	}
 
 	// Create task entries from spec.
-	base := []string{commandSection, cr.name}
+	var base []string
+	base = append(base, path...)
+	base = append(base, commandSection)
+	base = append(base, cr.name)
+
 	cr.getTasks(cr.root.Lookup(base...), base)
 	if cr.allErrors != nil {
 		return cr.allErrors
