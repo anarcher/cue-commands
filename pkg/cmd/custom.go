@@ -28,6 +28,10 @@ import (
 	"github.com/anarcher/cue-commands/pkg/walk"
 
 	_ "github.com/anarcher/cue-commands/pkg/tool/cli"
+	_ "github.com/anarcher/cue-commands/pkg/tool/exec"
+	_ "github.com/anarcher/cue-commands/pkg/tool/file"
+	_ "github.com/anarcher/cue-commands/pkg/tool/http"
+	_ "github.com/anarcher/cue-commands/pkg/tool/os"
 )
 
 const (
